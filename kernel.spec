@@ -71,10 +71,10 @@
 # For non-released -rc kernels, this will be appended after the rcX and
 # gitX tags, so a 3 here would become part of release "0.rcX.gitX.3"
 #
-%global baserelease 2
+%global baserelease 1
 
 # RaspberryPi foundation git snapshot (short)
-%global rpi_gitshort 89de6844d
+%global rpi_gitshort 42c8bbfa4
 
 %global build_release %{baserelease}
 
@@ -124,7 +124,7 @@
 %if 0%{?released_kernel}
 
 # Do we have a -stable update to apply?
-%define stable_update 67
+%define stable_update 73
 
 # Set rpm version accordingly
 %if 0%{?stable_update}
@@ -1686,6 +1686,10 @@ fi
 
 
 %changelog
+* Thu Feb 26 2026 Manuel Fombuena <mfombuena@innovara.tech> - 6.12.73-1.rpi
+- Update to stable kernel patch v6.12.73
+- Sync RPi patch to git revision: 42c8bbfa4cdd08eb5fe605e56ad13777559e9f24
+
 * Fri Jan 30 2026 Damian Wrobel <dwrobel@ertelnet.rybnik.pl> - 6.12.67-2.rpi
 - Fix for gcc-8.5.x compilation error
 
