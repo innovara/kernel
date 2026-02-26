@@ -1,0 +1,201 @@
+name: Build RPi Kernel for Fedora
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # Daily at 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force build even if no new stable version'
+        type: boolean
+        default: false
+      target:
+        description: 'Copr build target'
+        type: choice
+        options:
+          - testing
+          - stable
+        default: testing
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+      version_changed: ${{ steps.check.outputs.version_changed }}
+      kernel_version: ${{ steps.versions.outputs.kernel_version }}
+      rpi_version: ${{ steps.versions.outputs.rpi_version }}
+      rpi_patchlevel: ${{ steps.versions.outputs.rpi_patchlevel }}
+      rpi_sublevel: ${{ steps.versions.outputs.rpi_sublevel }}
+      rpi_git_short: ${{ steps.versions.outputs.rpi_git_short }}
+      rpi_git_full: ${{ steps.versions.outputs.rpi_git_full }}
+      patch_file: ${{ steps.versions.outputs.patch_file }}
+
+    steps:
+      - name: Checkout spec repo
+        uses: actions/checkout@v4
+
+      - name: Clone RPi kernel tree
+        run: |
+          git clone https://github.com/raspberrypi/linux \
+            --branch rpi-6.18.y \
+            --depth 500 \
+            --no-single-branch \
+            --filter=blob:none
+
+      - name: Extract versions
+        id: versions
+        run: |
+          cd linux
+          RPI_VERSION=$(grep "^VERSION" Makefile | awk '{print $3}')
+          RPI_PATCHLEVEL=$(grep "^PATCHLEVEL" Makefile | awk '{print $3}')
+          RPI_SUBLEVEL=$(grep "^SUBLEVEL" Makefile | awk '{print $3}')
+          RPI_GIT_SHORT=$(git rev-parse --short=9 HEAD)
+          RPI_GIT_FULL=$(git rev-parse HEAD)
+
+          echo "rpi_version=${RPI_VERSION}" >> $GITHUB_OUTPUT
+          echo "rpi_patchlevel=${RPI_PATCHLEVEL}" >> $GITHUB_OUTPUT
+          echo "rpi_sublevel=${RPI_SUBLEVEL}" >> $GITHUB_OUTPUT
+          echo "rpi_git_short=${RPI_GIT_SHORT}" >> $GITHUB_OUTPUT
+          echo "rpi_git_full=${RPI_GIT_FULL}" >> $GITHUB_OUTPUT
+          echo "kernel_version=${RPI_VERSION}.${RPI_PATCHLEVEL}.${RPI_SUBLEVEL}" >> $GITHUB_OUTPUT
+          echo "patch_file=bcm270x-linux-rpi-${RPI_VERSION}.${RPI_PATCHLEVEL}.y-${RPI_GIT_SHORT}.patch.xz" >> $GITHUB_OUTPUT
+
+      - name: Check if build is needed
+        id: check
+        run: |
+          SPEC_SUBLEVEL=$(grep '^%define stable_update' kernel.spec | awk '{print $3}')
+
+          if [ "$SPEC_SUBLEVEL" != "${{ steps.versions.outputs.rpi_sublevel }}" ]; then
+            echo "New stable version detected: $SPEC_SUBLEVEL -> ${{ steps.versions.outputs.rpi_sublevel }}. Proceeding."
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "version_changed=true" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event.inputs.force_build }}" = "true" ]; then
+            echo "Force build requested. Proceeding without spec update."
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "version_changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "No new stable version (SUBLEVEL=${SPEC_SUBLEVEL}). Skipping."
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "version_changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Fetch mainline stable tag
+        if: steps.check.outputs.version_changed == 'true'
+        run: |
+          cd linux
+          git remote add mainline \
+            https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
+          git fetch mainline \
+            tag v${{ steps.versions.outputs.kernel_version }} \
+            --no-tags
+
+      - name: Generate RPi patch
+        if: steps.check.outputs.version_changed == 'true'
+        run: |
+          cd linux
+          git diff v${{ steps.versions.outputs.kernel_version }} HEAD \
+            | xz -9 > ../${{ steps.versions.outputs.patch_file }}
+
+      - name: Update spec file
+        if: steps.check.outputs.version_changed == 'true'
+        run: |
+          OLD_HASH=$(grep '%global rpi_gitshort' kernel.spec | awk '{print $3}')
+          OLD_SUBLEVEL=$(grep '^%define stable_update' kernel.spec | awk '{print $3}')
+          OLD_BASERELEASE=$(grep '^%global baserelease' kernel.spec | awk '{print $3}')
+
+          sed -i "s/%global rpi_gitshort ${OLD_HASH}/%global rpi_gitshort ${{ steps.versions.outputs.rpi_git_short }}/" kernel.spec
+          sed -i "s/%define stable_update ${OLD_SUBLEVEL}/%define stable_update ${{ steps.versions.outputs.rpi_sublevel }}/" kernel.spec
+          sed -i "s/%global baserelease ${OLD_BASERELEASE}/%global baserelease 1/" kernel.spec
+
+      - name: Update spec changelog
+        if: steps.check.outputs.version_changed == 'true'
+        run: |
+          CHANGELOG_DATE=$(date "+%a %b %-d %Y")
+          CHANGELOG_ENTRY="* ${CHANGELOG_DATE} ${{ vars.CHANGELOG_NAME }} <${{ vars.CHANGELOG_EMAIL }}> - ${{ steps.versions.outputs.kernel_version }}-1.rpi\n- Update to stable kernel patch v${{ steps.versions.outputs.kernel_version }}\n- Sync RPi patch to git revision: ${{ steps.versions.outputs.rpi_git_full }}\n"
+          sed -i "/%changelog/a ${CHANGELOG_ENTRY}" kernel.spec
+
+      - name: Commit and push changes
+        if: steps.check.outputs.version_changed == 'true'
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          OLD_PATCH=$(git ls-files 'bcm270x-linux-rpi*.patch.xz')
+          if [ -n "$OLD_PATCH" ] && [ "$OLD_PATCH" != "${{ steps.versions.outputs.patch_file }}" ]; then
+            git rm "$OLD_PATCH"
+          fi
+          git add kernel.spec ${{ steps.versions.outputs.patch_file }}
+
+          git commit -m "Update to stable kernel patch v${{ steps.versions.outputs.kernel_version }}" \
+            -m "Sync RPi patch to git revision: ${{ steps.versions.outputs.rpi_git_full }}" \
+            -m "Signed-off-by: ${{ vars.CHANGELOG_NAME }} <${{ vars.CHANGELOG_EMAIL }}>"
+          git push
+
+  build:
+    needs: check
+    if: needs.check.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 1
+      matrix:
+        chroot: [fedora-43-aarch64]
+        flavour:
+          - { name: kernel, with_opts: "" }
+          - { name: kernel-rpi4, with_opts: rpi4 }
+          - { name: kernel-rpi5, with_opts: rpi5 }
+
+    steps:
+      - name: Install copr-cli
+        run: |
+          sudo apt-get install -y python3-pip
+          pip3 install copr-cli
+
+          mkdir -p ~/.config
+          cat > ~/.config/copr << EOF
+          [copr-cli]
+          login = ${{ secrets.COPR_LOGIN }}
+          username = ${{ vars.COPR_USERNAME }}
+          token = ${{ secrets.COPR_TOKEN }}
+          copr_url = https://copr.fedorainfracloud.org
+          EOF
+
+      - name: Set Copr target
+        run: |
+          TARGET="${{ github.event.inputs.target }}"
+          if [ "$TARGET" = "stable" ]; then
+            echo "COPR_TARGET=${{ vars.COPR_USERNAME }}/kernel-rpi" >> $GITHUB_ENV
+          else
+            echo "COPR_TARGET=${{ vars.COPR_USERNAME }}/kernel-rpi:custom:testing" >> $GITHUB_ENV
+          fi
+
+      - name: Build ${{ matrix.flavour.name }}
+        run: |
+          copr-cli edit-chroot ${{ vars.COPR_USERNAME }}/kernel-rpi/${{ matrix.chroot }} \
+            --reset with_opts
+          if [ -n "${{ matrix.flavour.with_opts }}" ]; then
+            copr-cli edit-chroot ${{ vars.COPR_USERNAME }}/kernel-rpi/${{ matrix.chroot }} \
+              --rpmbuild-with ${{ matrix.flavour.with_opts }}
+          fi
+          BUILD_ID=$(copr-cli build-package \
+            --timeout 18000 \
+            --enable-net on \
+            --nowait \
+            --name ${{ matrix.flavour.name }} \
+            ${{ env.COPR_TARGET }} | grep "Created builds:" | awk '{print $3}')
+          echo "Waiting for build $BUILD_ID binary task to be created..."
+          while true; do
+            STARTED_ON=$(curl -s "https://copr.fedorainfracloud.org/api_3/build-chroot/list?build_id=${BUILD_ID}" \
+              | python3 -c "import sys,json; items=json.load(sys.stdin)['items']; print(items[0]['started_on'] if items and items[0]['started_on'] is not None else 'null')" 2>/dev/null)
+            echo "  started_on: $STARTED_ON"
+            if [ "$STARTED_ON" != "null" ] && [ -n "$STARTED_ON" ]; then
+              echo "  Binary task created, waiting 15s for with_opts to be snapshotted..."
+              sleep 15
+              break
+            fi
+            sleep 10
+          done
+          copr-cli edit-chroot ${{ vars.COPR_USERNAME }}/kernel-rpi/${{ matrix.chroot }} \
+            --reset with_opts
