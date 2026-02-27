@@ -134,7 +134,7 @@ jobs:
             -m "Signed-off-by: ${{ vars.CHANGELOG_NAME }} <${{ vars.CHANGELOG_EMAIL }}>"
           git push
 
-  build:
+  submit:
     needs: check
     if: needs.check.outputs.skip == 'false'
     runs-on: ubuntu-latest
@@ -166,17 +166,18 @@ jobs:
         run: |
           TARGET="${{ github.event.inputs.target }}"
           if [ "$TARGET" = "stable" ]; then
-            echo "COPR_TARGET=${{ vars.COPR_USERNAME }}/kernel-rpi" >> $GITHUB_ENV
+            echo "COPR_TARGET=${{ vars.COPR_USERNAME }}/${{ vars.COPR_REPO_STABLE }}" >> $GITHUB_ENV
           else
-            echo "COPR_TARGET=${{ vars.COPR_USERNAME }}/kernel-rpi:custom:testing" >> $GITHUB_ENV
+            echo "COPR_TARGET=${{ vars.COPR_USERNAME }}/${{ vars.COPR_REPO_TESTING }}" >> $GITHUB_ENV
           fi
 
-      - name: Build ${{ matrix.flavour.name }}
+      - name: Submit ${{ matrix.flavour.name }}
         run: |
-          copr-cli edit-chroot ${{ vars.COPR_USERNAME }}/kernel-rpi/${{ matrix.chroot }} \
+          CHROOT="${{ env.COPR_TARGET }}/${{ matrix.chroot }}"
+          copr-cli edit-chroot ${CHROOT} \
             --reset with_opts
           if [ -n "${{ matrix.flavour.with_opts }}" ]; then
-            copr-cli edit-chroot ${{ vars.COPR_USERNAME }}/kernel-rpi/${{ matrix.chroot }} \
+            copr-cli edit-chroot ${CHROOT} \
               --rpmbuild-with ${{ matrix.flavour.with_opts }}
           fi
           BUILD_ID=$(copr-cli build-package \
@@ -197,5 +198,73 @@ jobs:
             fi
             sleep 10
           done
-          copr-cli edit-chroot ${{ vars.COPR_USERNAME }}/kernel-rpi/${{ matrix.chroot }} \
+          copr-cli edit-chroot ${CHROOT} \
             --reset with_opts
+          echo $BUILD_ID > build_id_${{ matrix.flavour.name }}.txt
+
+      - name: Upload build ID
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-id-${{ matrix.flavour.name }}
+          path: build_id_${{ matrix.flavour.name }}.txt
+
+  monitor:
+    needs: submit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install copr-cli
+        run: |
+          sudo apt-get install -y python3-pip
+          pip3 install copr-cli
+
+          mkdir -p ~/.config
+          cat > ~/.config/copr << EOF
+          [copr-cli]
+          login = ${{ secrets.COPR_LOGIN }}
+          username = ${{ vars.COPR_USERNAME }}
+          token = ${{ secrets.COPR_TOKEN }}
+          copr_url = https://copr.fedorainfracloud.org
+          EOF
+
+      - name: Download build IDs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: build-id-*
+          merge-multiple: true
+
+      - name: Monitor builds
+        run: |
+          FAILED=false
+
+          monitor_build() {
+            BUILD_ID=$1
+            NAME=$2
+            echo "Monitoring $NAME (build $BUILD_ID)..."
+            while true; do
+              STATUS=$(copr-cli status $BUILD_ID)
+              echo "  $NAME ($BUILD_ID): $STATUS"
+              if [ "$STATUS" = "succeeded" ] || [ "$STATUS" = "failed" ]; then
+                echo "$STATUS" > result_${BUILD_ID}.txt
+                break
+              fi
+              sleep 60
+            done
+          }
+
+          for FILE in build_id_*.txt; do
+            BUILD_ID=$(cat $FILE)
+            NAME=$(basename $FILE .txt | sed 's/build_id_//')
+            monitor_build $BUILD_ID $NAME &
+          done
+          wait
+
+          for FILE in result_*.txt; do
+            STATUS=$(cat $FILE)
+            if [ "$STATUS" = "failed" ]; then
+              FAILED=true
+            fi
+          done
+
+          if [ "$FAILED" = "true" ]; then
+            exit 1
+          fi
