@@ -1,0 +1,42 @@
+name: Renew Copr API Token
+
+on:
+  schedule:
+    - cron: '0 5 * * 1'  # Every Monday at 05:00 UTC
+  workflow_dispatch:
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install copr-cli
+        run: |
+          sudo apt-get install -y python3-pip
+          pip3 install copr-cli
+
+          mkdir -p ~/.config
+          cat > ~/.config/copr << EOF
+          [copr-cli]
+          login = ${{ secrets.COPR_LOGIN }}
+          username = ${{ vars.COPR_USERNAME }}
+          token = ${{ secrets.COPR_TOKEN }}
+          copr_url = https://copr.fedorainfracloud.org
+          EOF
+
+      - name: Renew Copr token
+        run: |
+          copr-cli --config ~/.config/copr new-api-token
+          NEW_TOKEN=$(grep 'token' ~/.config/copr | grep -v 'copr_url' | awk '{print $3}')
+          NEW_LOGIN=$(grep 'login' ~/.config/copr | awk '{print $3}')
+          echo "::add-mask::${NEW_TOKEN}"
+          echo "::add-mask::${NEW_LOGIN}"
+          echo "NEW_TOKEN=${NEW_TOKEN}" >> $GITHUB_ENV
+          echo "NEW_LOGIN=${NEW_LOGIN}" >> $GITHUB_ENV
+
+      - name: Update GitHub secrets
+        run: |
+          gh secret set COPR_TOKEN --body "${{ env.NEW_TOKEN }}" --repo ${{ github.repository }}
+          gh secret set COPR_LOGIN --body "${{ env.NEW_LOGIN }}" --repo ${{ github.repository }}
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
