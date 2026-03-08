@@ -268,3 +268,50 @@ jobs:
           if [ "$FAILED" = "true" ]; then
             exit 1
           fi
+
+  notify:
+    needs: [check, monitor]
+    if: always() && needs.monitor.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Create issue for testing build
+        if: needs.check.outputs.version_changed == 'true' && github.event.inputs.target != 'stable'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          VERSION="${{ needs.check.outputs.kernel_version }}"
+          gh issue create \
+            --title "Kernel v${VERSION} built in kernel-rpi-testing - ready for testing" \
+            --body "$(cat <<EOF
+          ## Kernel v${VERSION} is ready for testing
+
+          A new kernel version has been detected and successfully built in **kernel-rpi-testing**.
+
+          **Version:** v${VERSION}
+          **RPi git commit:** ${{ needs.check.outputs.rpi_git_full }}
+
+          Once tested, promote by running the workflow with \`target=stable\` and \`force_build=true\`. This issue will be closed automatically.
+          EOF
+          )"
+
+      - name: Close issue when promoted to stable
+        if: github.event.inputs.target == 'stable'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          VERSION="${{ needs.check.outputs.kernel_version }}"
+          ISSUE=$(gh issue list \
+            --search "Kernel v${VERSION} built in kernel-rpi-testing in:title" \
+            --state open \
+            --json number \
+            --jq '.[0].number // empty')
+          if [ -n "$ISSUE" ]; then
+            gh issue close "$ISSUE" \
+              --comment "Promoted to stable (v${VERSION}). Closing."
+          else
+            echo "No open issue found for v${VERSION}, nothing to close."
+          fi
