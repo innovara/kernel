@@ -269,6 +269,15 @@ jobs:
             exit 1
           fi
 
+      - name: Regenerate Copr repo metadata
+        if: success()
+        run: |
+          if [ "${{ github.event.inputs.target }}" = "stable" ]; then
+            copr-cli regenerate-repos ${{ vars.COPR_USERNAME }}/${{ vars.COPR_REPO_STABLE }}
+          else
+            copr-cli regenerate-repos ${{ vars.COPR_USERNAME }}/${{ vars.COPR_REPO_TESTING }}
+          fi
+
   notify:
     needs: [check, monitor]
     if: always() && needs.monitor.result == 'success'
