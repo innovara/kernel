@@ -2,7 +2,7 @@ name: Build RPi Kernel for Fedora
 
 on:
   schedule:
-    - cron: '0 2 * * *'  # Daily at 02:00 UTC
+    - cron: '0 22 * * *'  # Daily at 22:00 UTC
   workflow_dispatch:
     inputs:
       force_build:
