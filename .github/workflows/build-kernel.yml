@@ -141,7 +141,7 @@ jobs:
     strategy:
       max-parallel: 1
       matrix:
-        chroot: [fedora-43-aarch64]
+        chroot: [fedora-43-aarch64, fedora-44-aarch64]
         flavour:
           - { name: kernel, with_opts: "" }
           - { name: kernel-rpi4, with_opts: rpi4 }
