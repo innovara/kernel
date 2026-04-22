@@ -35,7 +35,7 @@ jobs:
 
     steps:
       - name: Checkout spec repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Clone RPi kernel tree
         run: |
@@ -205,7 +205,7 @@ jobs:
           echo $BUILD_ID > build_id_${{ matrix.chroot }}_${{ matrix.flavour.name }}.txt
 
       - name: Upload build ID
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-id-${{ matrix.chroot }}-${{ matrix.flavour.name }}
           path: build_id_${{ matrix.chroot }}_${{ matrix.flavour.name }}.txt
@@ -229,7 +229,7 @@ jobs:
           EOF
 
       - name: Download build IDs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: build-id-*
           merge-multiple: true
