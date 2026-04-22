@@ -200,13 +200,13 @@ jobs:
           done
           copr-cli edit-chroot ${CHROOT} \
             --reset with_opts
-          echo $BUILD_ID > build_id_${{ matrix.flavour.name }}.txt
+          echo $BUILD_ID > build_id_${{ matrix.chroot }}_${{ matrix.flavour.name }}.txt
 
       - name: Upload build ID
         uses: actions/upload-artifact@v4
         with:
-          name: build-id-${{ matrix.flavour.name }}
-          path: build_id_${{ matrix.flavour.name }}.txt
+          name: build-id-${{ matrix.chroot }}-${{ matrix.flavour.name }}
+          path: build_id_${{ matrix.chroot }}_${{ matrix.flavour.name }}.txt
 
   monitor:
     needs: submit
