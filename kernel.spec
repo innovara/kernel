@@ -71,7 +71,7 @@
 # For non-released -rc kernels, this will be appended after the rcX and
 # gitX tags, so a 3 here would become part of release "0.rcX.gitX.3"
 #
-%global baserelease 1
+%global baserelease 2
 
 # RaspberryPi foundation git snapshot (short)
 %global rpi_gitshort 66318c5b5
@@ -351,6 +351,7 @@ Source99: filter-modules.sh
 Source1000: config-bcm27xx.cfg
 Source1100: config-bcm283x.cfg
 Source1200: config-lpae.cfg
+Source1300: config-hugepages.cfg
 
 # rt kernel patch
 %if %{enable_preempt}
@@ -1013,6 +1014,10 @@ BuildKernel() {
     %endif
     # merge kernel config fragments
     scripts/kconfig/merge_config.sh -m -r .config %{SOURCE1000}
+    %if %{with_rpi4} || %{with_rpi5}
+    # merge rpi4/rpi5 specific kernel config changes
+    scripts/kconfig/merge_config.sh -m -r .config %{SOURCE1300}
+    %endif
     %endif
 
     %if %{with_rt_preempt}
@@ -1684,6 +1689,9 @@ fi
 
 
 %changelog
+* Mon May 12 2026 Manuel Fombuena <mfombuena@innovara.tech> - 6.18.29-2.rpi
+- Add config-hugepages.cfg and apply it only to rpi4/rpi5 builds to enable Transparent Hugepage support (resolves v3d THP recommendation at boot)
+
 * Mon May 11 2026 Manuel Fombuena <mfombuena@innovara.tech> - 6.18.29-1.rpi
 - Update to stable kernel patch v6.18.29
 - Sync RPi patch to git revision: 66318c5b5cd8145a662303af12ed39ac07eb27cc
