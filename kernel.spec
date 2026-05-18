@@ -71,10 +71,10 @@
 # For non-released -rc kernels, this will be appended after the rcX and
 # gitX tags, so a 3 here would become part of release "0.rcX.gitX.3"
 #
-%global baserelease 2
+%global baserelease 1
 
 # RaspberryPi foundation git snapshot (short)
-%global rpi_gitshort 66318c5b5
+%global rpi_gitshort 73125b06e
 
 %global build_release %{baserelease}
 
@@ -124,7 +124,7 @@
 %if 0%{?released_kernel}
 
 # Do we have a -stable update to apply?
-%define stable_update 29
+%define stable_update 32
 
 # Set rpm version accordingly
 %if 0%{?stable_update}
@@ -1689,6 +1689,10 @@ fi
 
 
 %changelog
+* Mon May 18 2026 Manuel Fombuena <mfombuena@innovara.tech> - 6.18.32-1.rpi
+- Update to stable kernel patch v6.18.32
+- Sync RPi patch to git revision: 73125b06ecdf432cbb41fa77fb5394fdae9458bc
+
 * Mon May 12 2026 Manuel Fombuena <mfombuena@innovara.tech> - 6.18.29-2.rpi
 - Add config-hugepages.cfg and apply it only to rpi4/rpi5 builds to enable Transparent Hugepage support (resolves v3d THP recommendation at boot)
 
