@@ -185,16 +185,17 @@ jobs:
               --chroot ${{ matrix.chroot }} \
               --name $NAME \
               ${{ env.COPR_TARGET }} | grep "Created builds:" | awk '{print $3}')
-            echo "Waiting for build $BUILD_ID binary task to be created..."
+            echo "Waiting for build $BUILD_ID ($NAME) to reach running state in ${{ matrix.chroot }}..."
             while true; do
-              STARTED_ON=$(curl -s "https://copr.fedorainfracloud.org/api_3/build-chroot/list?build_id=${BUILD_ID}" \
-                | python3 -c "import sys,json; items=json.load(sys.stdin)['items']; print(items[0]['started_on'] if items and items[0]['started_on'] is not None else 'null')" 2>/dev/null)
-              echo "  started_on: $STARTED_ON"
-              if [ "$STARTED_ON" != "null" ] && [ -n "$STARTED_ON" ]; then
-                echo "  Binary task created, waiting 15s for with_opts to be snapshotted..."
-                sleep 15
-                break
-              fi
+              STATE=$(curl -s "https://copr.fedorainfracloud.org/api_3/build-chroot/list?build_id=${BUILD_ID}" \
+                | python3 -c "import sys,json; items=json.load(sys.stdin).get('items',[]); print(items[0]['state'] if items else 'waiting')" 2>/dev/null)
+              echo "  state: $STATE"
+              case "$STATE" in
+                running|succeeded|failed|skipped|canceled|forked)
+                  echo "  Build is $STATE, with_opts consumed by Mock, safe to reset."
+                  break
+                  ;;
+              esac
               sleep 10
             done
             copr-cli edit-chroot ${CHROOT} --reset with_opts
