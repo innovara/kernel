@@ -1701,7 +1701,7 @@ fi
 - Update to stable kernel patch v6.18.32
 - Sync RPi patch to git revision: 73125b06ecdf432cbb41fa77fb5394fdae9458bc
 
-* Mon May 12 2026 Manuel Fombuena <mfombuena@innovara.tech> - 6.18.29-2.rpi
+* Tue May 12 2026 Manuel Fombuena <mfombuena@innovara.tech> - 6.18.29-2.rpi
 - Add config-hugepages.cfg and apply it only to rpi4/rpi5 builds to enable Transparent Hugepage support (resolves v3d THP recommendation at boot)
 
 * Mon May 11 2026 Manuel Fombuena <mfombuena@innovara.tech> - 6.18.29-1.rpi
