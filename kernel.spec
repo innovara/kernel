@@ -290,9 +290,6 @@ BuildRequires: m4
 BuildRequires: make
 BuildRequires: net-tools
 BuildRequires: openssl-devel
-%if 0%{?fedora} >= 41
-BuildRequires: openssl-devel-engine
-%endif
 BuildRequires: patch
 BuildRequires: perl-interpreter
 BuildRequires: perl-Carp
