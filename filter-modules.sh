@@ -135,11 +135,6 @@ do
         filter_ko $1 ${mod}
 done
 
-# Rescue CEC core from the media filter: drm_display_helper.ko (kernel-core)
-# depends on cec.ko symbols, so cec.ko must remain in kernel-core for depmod.
-grep "drivers/media/cec/" k-d.list >> $1
-grep -v "drivers/media/cec/" k-d.list > k-d.list.tmp && mv k-d.list.tmp k-d.list
-
 # Go through our generated drivers list and remove the .ko files.  We'll
 # restore them later.
 for mod in `cat k-d.list`
